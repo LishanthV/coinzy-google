@@ -40,9 +40,12 @@ export default function App() {
         const data = await res.json();
         if (res.ok && data.user) {
           setUser(data.user);
+        } else {
+          setUser(null);
         }
       } catch (err) {
         console.error("Check auth failed:", err);
+        setUser(null);
       } finally {
         setLoading(false);
       }
@@ -59,6 +62,15 @@ export default function App() {
       setIsDarkMode(false);
     }
   }, []);
+
+  // Synchronize user to localStorage for iframe support
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem("trackifyUser", JSON.stringify(user));
+    } else {
+      localStorage.removeItem("trackifyUser");
+    }
+  }, [user]);
 
   // Fetch metrics whenever user changes or refreshed
   const fetchSummary = async () => {
@@ -102,6 +114,7 @@ export default function App() {
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {
+        sessionStorage.setItem("loggedOut", "true");
         setUser(null);
         setSummary(null);
         setActiveTab("dashboard");

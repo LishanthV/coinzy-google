@@ -4,11 +4,7 @@ import fs from "fs";
 import session from "express-session";
 import bcrypt from "bcryptjs";
 import multer from "multer";
-import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const PORT = 3000;
 const DATA_FILE = path.join(process.cwd(), "data_store.json");
@@ -22,6 +18,96 @@ interface DataStore {
   goals: any[];
   recurring: any[];
   upiTransactions: any[];
+}
+
+// Helper to parse SMS messages from banks and UPI alerts
+function parseSMSMessage(text: string) {
+  // Clean text from commas inside numbers first to make regex matching easy (e.g. 1,000.00 -> 1000.00)
+  const cleanedText = text.replace(/(\d),(\d)/g, "$1$2");
+  
+  // Match amount pattern: Rs. 500, Rs 500, INR 500, $500, ₹500, rs500 etc.
+  const amountRegex = /(?:Rs\.?|INR|USD|\$|₹)\s*(\d+(?:\.\d+)?)/i;
+  const amountMatch = cleanedText.match(amountRegex);
+  let amount = 0;
+  if (amountMatch) {
+    amount = parseFloat(amountMatch[1]);
+  } else {
+    // try matching bare number near "debit", "credit", "spent", "received"
+    const bareAmountRegex = /(?:debited|credited|spent|received|transfer|payment of)\s+(?:of\s+)?(\d+(?:\.\d+)?)/i;
+    const bareMatch = cleanedText.match(bareAmountRegex);
+    if (bareMatch) {
+      amount = parseFloat(bareMatch[1]);
+    }
+  }
+
+  // Determine type: debit vs credit
+  let type: 'expense' | 'income' = "expense";
+  if (/credit|received|added|deposited|refund|cash\s*back/i.test(cleanedText)) {
+    type = "income";
+  }
+
+  // Extract UPI Reference or Transaction ID
+  const upiRefRegex = /(?:upi\s*ref|ref\s*no|txn\s*id|transaction\s*id|ref|id)[:\s-]*(\d{8,14})/i;
+  const upiMatch = cleanedText.match(upiRefRegex);
+  let upiRef = upiMatch ? upiMatch[1] : "";
+  if (!upiRef) {
+    const seqMatch = cleanedText.match(/\b\d{10,12}\b/);
+    if (seqMatch) {
+      upiRef = seqMatch[0];
+    } else {
+      upiRef = "3145" + Math.floor(10000000 + Math.random() * 90000000);
+    }
+  }
+
+  // Extract Merchant/Title
+  let title = "UPI Transaction Alert";
+  const merchantRegex = /(?:at|to|info|vpa|on|for|spent\s+at)\s+([A-Za-z0-9\s\.\-_]+?)(?:\s+on|\s+via|\s+Ref|\s+using|\s+with|\.|\/|$)/i;
+  const merchantMatch = cleanedText.match(merchantRegex);
+  if (merchantMatch) {
+    const candidate = merchantMatch[1].trim();
+    if (candidate.length > 2 && !/^(the|your|account|my|card|ref|upi|bank)$/i.test(candidate)) {
+      title = candidate;
+    }
+  } else {
+    const words = cleanedText.split(/\s+/).slice(0, 4).join(" ");
+    if (words) {
+      title = words + "...";
+    }
+  }
+
+  // Categorize based on title
+  let category = "Others";
+  const titleLower = title.toLowerCase();
+  if (/swiggy|zomato|food|rest|cafe|chutney|chai|coffee|starbucks|burger|pizza/i.test(titleLower)) {
+    category = "Food";
+  } else if (/rent|broker|pg|room/i.test(titleLower)) {
+    category = "Rent";
+  } else if (/uber|ola|rapido|cab|metro|petrol|fuel|shell|honda|transport|travel/i.test(titleLower)) {
+    category = "Transport";
+  } else if (/amazon|flipkart|myntra|reliance|shopping|mall|decathlon|store|grocer/i.test(titleLower)) {
+    category = "Shopping";
+  } else if (/airtel|jio|vi|broadband|electricity|bill|power|water|recharge|dth/i.test(titleLower)) {
+    category = "Bills";
+  } else if (/netflix|spotify|prime|movie|theatre|cinema|bookmyshow|game|playstation/i.test(titleLower)) {
+    category = "Entertainment";
+  } else if (/apollo|medplus|pharmeasy|hospital|doctor|clinic|pharmacy|medicine/i.test(titleLower)) {
+    category = "Health";
+  } else if (/salary|paycheck|payout|payroll/i.test(titleLower)) {
+    category = "Salary";
+  }
+
+  title = title.replace(/Rs\.?\s*\d+/i, "").replace(/debited|credited/i, "").trim();
+  if (!title || title.length < 2) {
+    title = type === "income" ? "Received Fund Alert" : "UPI Spending Alert";
+  }
+
+  return {
+    amount,
+    title,
+    category,
+    type,
+    upiRef
+  };
 }
 
 // Helper to load/save data securely
@@ -136,6 +222,17 @@ async function startServer() {
       cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24 hours
     })
   );
+
+  // Auto-authenticate user id via custom header or query parameters for iframe/third-party cookie compatibility
+  app.use((req, res, next) => {
+    const userId = req.headers["x-user-id"] || req.query?.userId;
+    if (userId && typeof userId === "string") {
+      if (req.session) {
+        req.session.userId = userId;
+      }
+    }
+    next();
+  });
 
   // Set up file upload destination for bill/profile scans
   const upload = multer({ dest: "static/uploads/" });
@@ -812,8 +909,10 @@ async function startServer() {
 
   app.post("/api/sync/gpay", (req, res) => {
     // Allows instant simulations
+    const userId = req.session?.userId || "demo-user-id";
     const amount = parseFloat(req.body.amount);
     const title = req.body.title || "Sample Merchant Payment";
+    const type = req.body.type || "expense";
 
     if (isNaN(amount) || amount <= 0) {
       return res.status(400).json({ error: "Invalid simulator amount" });
@@ -823,13 +922,15 @@ async function startServer() {
     const ref = "3145" + Math.floor(10000000 + Math.random() * 90000000);
     const mockTx = {
       id: "u-sim-" + Math.random().toString(36).substr(2, 5),
+      userId,
       title: title,
       amount: amount,
-      category: "Others",
+      category: type === "income" ? "Salary" : "Others",
       date: new Date().toISOString().split("T")[0],
       sourceEmail: "Simulated GPay Push",
       upiRef: ref,
-      approved: false
+      approved: false,
+      type: type
     };
 
     db.upiTransactions.push(mockTx);
@@ -838,11 +939,63 @@ async function startServer() {
     res.json({ message: `GPay push simulation received for ${amount} via UPI Ref: ${ref}! Navigate to UPI Sync to review.`, transaction: mockTx });
   });
 
+  // Mobile SMS Gateway Webhook
+  app.post("/api/sync/sms-webhook", (req, res) => {
+    const { message, sender, email } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: "No SMS 'message' text provided in payload" });
+    }
+
+    const db = loadDB();
+    let targetUserId = "demo-user-id";
+    if (email) {
+      const foundUser = Object.values(db.users).find((u) => u.email === email);
+      if (foundUser) {
+        targetUserId = foundUser.id;
+      }
+    } else if (req.session?.userId) {
+      targetUserId = req.session.userId;
+    }
+
+    const parsed = parseSMSMessage(message);
+    if (parsed.amount <= 0) {
+      return res.status(422).json({ error: "Could not parse any valid transaction amount from SMS" });
+    }
+
+    // Check for duplicate upiRef
+    const exists = db.upiTransactions.some((u) => u.upiRef === parsed.upiRef);
+    if (exists) {
+      return res.status(409).json({ error: "Duplicate transaction: UPI reference already exists in queue" });
+    }
+
+    const newTx = {
+      id: "sms-" + Math.random().toString(36).substr(2, 5),
+      userId: targetUserId,
+      title: parsed.title,
+      amount: parsed.amount,
+      category: parsed.category,
+      date: new Date().toISOString().split("T")[0],
+      sourceEmail: sender ? `SMS (${sender})` : "SMS Webhook Gateway",
+      upiRef: parsed.upiRef,
+      approved: false,
+      type: parsed.type
+    };
+
+    db.upiTransactions.push(newTx);
+    saveDB(db);
+
+    res.json({
+      success: true,
+      message: `SMS parsed successfully! Added to your UPI Sync pending queue as ${parsed.type === "income" ? "income" : "expense"}.`,
+      parsedTransaction: newTx
+    });
+  });
+
   app.post("/api/sync/gmail/confirm", (req, res) => {
     const userId = req.session?.userId;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const { imports } = req.body; // Array of { id, title, amount, category, date }
+    const { imports } = req.body; // Array of { id, title, amount, category, date, type }
     if (!Array.isArray(imports) || imports.length === 0) {
       return res.status(400).json({ error: "No transactions selected for import" });
     }
@@ -853,27 +1006,40 @@ async function startServer() {
 
     let count = 0;
     imports.forEach((item) => {
-      // Create real expense
-      const expId = Math.random().toString(36).substr(2, 9);
-      db.expenses.push({
-        id: expId,
-        userId,
-        title: item.title,
-        amount: parseFloat(item.amount),
-        category: item.category,
-        date: item.date,
-        note: `Imported via UPI Sync (Ref ID: ${item.upiRef || "N/A"})`,
-        type: "expense"
-      });
+      const upiTx = db.upiTransactions.find((u) => u.id === item.id);
+      const isIncome = item.type === "income" || (upiTx && upiTx.type === "income");
+      const recordId = Math.random().toString(36).substr(2, 9);
+
+      if (isIncome) {
+        db.income.push({
+          id: recordId,
+          userId,
+          title: item.title,
+          amount: parseFloat(item.amount),
+          category: item.category || "Salary",
+          date: item.date || new Date().toISOString().split("T")[0],
+          note: `Imported via UPI Sync (Ref ID: ${item.upiRef || "N/A"})`,
+          type: "income"
+        });
+        user.walletBalance = user.walletBalance + parseFloat(item.amount);
+      } else {
+        db.expenses.push({
+          id: recordId,
+          userId,
+          title: item.title,
+          amount: parseFloat(item.amount),
+          category: item.category || "Others",
+          date: item.date || new Date().toISOString().split("T")[0],
+          note: `Imported via UPI Sync (Ref ID: ${item.upiRef || "N/A"})`,
+          type: "expense"
+        });
+        user.walletBalance = Math.max(0, user.walletBalance - parseFloat(item.amount));
+      }
 
       // Mark original UPI sync row as approved
-      const upiTx = db.upiTransactions.find((u) => u.id === item.id);
       if (upiTx) {
         upiTx.approved = true;
       }
-
-      // Deduct from wallet
-      user.walletBalance = Math.max(0, user.walletBalance - parseFloat(item.amount));
       count++;
     });
 

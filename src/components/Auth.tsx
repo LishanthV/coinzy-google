@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { LogIn, UserPlus, KeyRound, Mail, User, ShieldCheck, RefreshCw } from "lucide-react";
 
 interface AuthProps {
@@ -20,6 +20,35 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    const hasLoggedOut = sessionStorage.getItem("loggedOut") === "true";
+    if (!hasLoggedOut) {
+      setEmail("demo@example.com");
+      setPassword("CoinzyDemo2026!");
+      
+      const performAutoLogin = async () => {
+        setLoading(true);
+        try {
+          const res = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "demo@example.com", password: "CoinzyDemo2026!" }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            onLoginSuccess(data.user);
+          }
+        } catch (err) {
+          console.error("Auto-login failed:", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      performAutoLogin();
+    }
+  }, [onLoginSuccess]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -329,6 +358,7 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
                 <button
                   type="button"
                   onClick={() => {
+                    sessionStorage.removeItem("loggedOut");
                     setEmail("demo@example.com");
                     setPassword("CoinzyDemo2026!");
                     setTimeout(() => {
