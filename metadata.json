@@ -1,0 +1,6 @@
+{
+  "name": "Coinzy",
+  "description": "An automated personal finance, ledger tracking, and UPI sync platform built to calibrate wallets, recurring bills, and export Statements.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

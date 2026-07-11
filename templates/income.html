@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Income — Trackify{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>Income</h2>
+    <p class="page-sub">Manage your revenue and deposits</p>
+  </div>
+  <div style="display:flex;gap:12px">
+    <a href="{{ url_for('export_income_csv') }}" class="btn-secondary">Export CSV</a>
+    <a href="{{ url_for('add_income') }}" class="btn-primary">+ Add Income</a>
+  </div>
+</div>
+
+{% if income_list %}
+      <td class="td-date">{{ i.income_date }}</td>
+      <td class="td-title">{{ i.title }}</td>
+      <td><span class="cat-badge cat-badge-green">{{ i.category }}</span></td>
+      <td class="td-note">{{ i.note or '—' }}</td>
+      <td class="text-right" style="color:#1D9E75;font-weight:600">+{{ currency_symbol }}{{ "%.2f"|format(i.amount) }}</td>
+      <td class="text-center">
+        <form method="POST" action="{{ url_for('delete_income',iid=i.id) }}" onsubmit="return confirm('Delete?')">
+          <button type="submit" class="btn-delete">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-card"><div class="empty-icon">💵</div><p>No income recorded.</p><a href="{{ url_for('add_income') }}" class="btn-primary">Add income</a></div>
+{% endif %}
+{% endblock %}

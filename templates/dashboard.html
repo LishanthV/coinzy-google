@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Trackify{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="page-kicker">{{ now.strftime('%B %Y') if now else 'Monthly' }} Spending Overview</p>
+    <h2>Welcome back, {{ session.user_name }}</h2>
+  </div>
+  <div class="header-actions">
+    <button class="btn-secondary" onclick="simulateGPay()">Simulate GPay</button>
+    <a href="{{ url_for('add_expense') }}" class="btn-primary">+ Add Expense</a>
+  </div>
+</div>
+
+<!-- Main Metrics -->
+<div class="stats-grid">
+  <div class="stat-card stat-primary">
+    <div class="stat-icon"><i class="fa-solid fa-wallet"></i></div>
+    <div class="stat-info">
+      <p class="stat-label">Available Balance</p>
+      <h3 class="stat-value">{{ currency_symbol }}{{ "{:,.2f}".format(wallet_balance) }}</h3>
+    </div>
+    <a href="{{ url_for('add_money') }}" class="stat-action">Add Money</a>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon icon-success"><i class="fa-solid fa-arrow-trend-up"></i></div>
+    <div class="stat-info">
+      <p class="stat-label">Income This Month</p>
+      <h3 class="stat-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_income) }}</h3>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon icon-danger"><i class="fa-solid fa-arrow-trend-down"></i></div>
+    <div class="stat-info">
+      <p class="stat-label">Expenses This Month</p>
+      <h3 class="stat-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_expenses) }}</h3>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-main">
+  <!-- Chart Section -->
+  <div class="card chart-container">
+    <div class="card-header">
+      <h3>Spending Analytics</h3>
+      <div class="chart-legend" id="chartLegend"></div>
+    </div>
+    <canvas id="spendChart" height="200"></canvas>
+  </div>
+
+  <!-- Recent Transactions -->
+  <div class="card">
+    <div class="card-header">
+      <h3>Recent Transactions</h3>
+      <a href="{{ url_for('expenses') }}" class="btn-text">View All</a>
+    </div>
+    <div class="transaction-list">
+      {% if recent %}
+        {% for tx in recent %}
+        <div class="transaction-item">
+          <div class="transaction-icon">{{ cat_icons.get(tx.category, '💳') }}</div>
+          <div class="transaction-info">
+            <p class="transaction-title">{{ tx.title }}</p>
+            <p class="transaction-meta">{{ tx.category }} • {{ tx.txdate }}</p>
+          </div>
+          <div class="transaction-amount {{ 'text-success' if tx.type == 'income' else 'text-danger' }}">
+            {{ '+' if tx.type == 'income' else '-' }}{{ currency_symbol }}{{ "{:,.2f}".format(tx.amount) }}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <i class="fa-solid fa-receipt"></i>
+          <p>No transactions yet. Start by adding an expense!</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+function simulateGPay() {
+    const amount = (Math.random() * 500 + 50).toFixed(2);
+    fetch('/api/sync/gpay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amount, title: 'Sample Merchant Payment' })
+    })
+    .then(r => r.json())
+    .then(data => {
+        alert(data.message);
+        window.location.reload();
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('spendChart').getContext('2d');
+    
+    // Read data from hidden JSON elements to satisfy IDE linting
+    const labelsData = document.getElementById('chartLabelsData').textContent;
+    const valuesData = document.getElementById('chartValuesData').textContent;
+    
+    if (!labelsData || !valuesData) return;
+    
+    const categoryLabels = JSON.parse(labelsData);
+    const categoryValues = JSON.parse(valuesData);
+    
+    if (!categoryLabels || categoryLabels.length === 0) return;
+
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: categoryLabels,
+            datasets: [{
+                label: 'Spending',
+                data: categoryValues,
+                backgroundColor: 'rgba(39, 174, 96, 0.8)',
+                borderColor: '#27ae60',
+                borderWidth: 1,
+                borderRadius: 8,
+                barThickness: 30
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#0a3d62',
+                    padding: 12,
+                    titleFont: { size: 14, weight: 'bold' }
+                }
+            },
+            scales: {
+                y: { 
+                    beginAtZero: true, 
+                    grid: { color: '#f1f1f1', drawBorder: false },
+                    ticks: { font: { weight: '600' } }
+                },
+                x: { 
+                    grid: { display: false },
+                    ticks: { font: { weight: '600' } }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}
