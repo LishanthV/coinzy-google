@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Coins, CheckCircle, ShieldAlert, Award, FileDown, Trash2, Calendar, AlertTriangle } from "lucide-react";
 import { CURRENCIES, CURRENCY_SYMBOLS } from "../types.ts";
 
@@ -20,6 +20,32 @@ export default function Settings({ summary, onRefresh }: SettingsProps) {
   const [endDate, setEndDate] = useState("");
   const [exportLoading, setExportLoading] = useState(false);
   const [exportTxs, setExportTxs] = useState<any[]>([]);
+
+  // Calculate high-fidelity Savings Score for the Monthly Report
+  const savingsScore = useMemo(() => {
+    const totalInc = exportTxs.filter(tx => tx.type === "income").reduce((sum, tx) => sum + tx.amount, 0);
+    const totalExp = exportTxs.filter(tx => tx.type === "expense").reduce((sum, tx) => sum + tx.amount, 0);
+    if (totalInc === 0) return 60; // default base score
+    
+    const savingsRate = ((totalInc - totalExp) / totalInc) * 100;
+    let score = 65 + Math.max(-35, Math.min(savingsRate * 0.4, 15));
+    
+    const activeBudgets = summary?.budgets || [];
+    let overBudgetCount = 0;
+    activeBudgets.forEach((b: any) => {
+      const spent = exportTxs.filter(tx => tx.category === b.category && tx.type === "expense").reduce((sum, tx) => sum + tx.amount, 0);
+      if (spent > b.amount) overBudgetCount++;
+    });
+
+    if (activeBudgets.length > 0) {
+      const budgetSuccessRate = (activeBudgets.length - overBudgetCount) / activeBudgets.length;
+      score += budgetSuccessRate * 20;
+    } else {
+      score += 15; // standard bonus for default good standing
+    }
+
+    return Math.min(Math.round(score), 100);
+  }, [exportTxs, summary]);
 
   // Delete Account States
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -390,43 +416,115 @@ export default function Settings({ summary, onRefresh }: SettingsProps) {
           </div>
         </div>
 
-        {/* METRICS SUMMARY */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        {/* METRICS & SCORE */}
+        <div className="grid grid-cols-4 gap-4 mb-8">
           <div className="border rounded-xl p-4 bg-slate-50">
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total Income</p>
-            <p className="text-lg font-extrabold text-emerald-600 mt-1">
+            <p className="text-lg font-extrabold text-emerald-600 mt-1 font-mono">
               {(CURRENCY_SYMBOLS[summary?.currencyCode || "INR"] || "$")}{" "}
-              {exportTxs.filter(tx => tx.type === "income").reduce((sum, tx) => sum + tx.amount, 0).toLocaleString()}
+              {exportTxs.filter(tx => tx.type === "income").reduce((sum, tx) => sum + tx.amount, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </p>
           </div>
           <div className="border rounded-xl p-4 bg-slate-50">
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total Expenses</p>
-            <p className="text-lg font-extrabold text-red-500 mt-1">
+            <p className="text-lg font-extrabold text-red-500 mt-1 font-mono">
               {(CURRENCY_SYMBOLS[summary?.currencyCode || "INR"] || "$")}{" "}
-              {exportTxs.filter(tx => tx.type === "expense").reduce((sum, tx) => sum + tx.amount, 0).toLocaleString()}
+              {exportTxs.filter(tx => tx.type === "expense").reduce((sum, tx) => sum + tx.amount, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </p>
           </div>
           <div className="border rounded-xl p-4 bg-slate-50">
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Net Flow</p>
-            <p className={`text-lg font-extrabold mt-1 ${
+            <p className={`text-lg font-extrabold mt-1 font-mono ${
               exportTxs.reduce((sum, tx) => sum + (tx.type === "income" ? tx.amount : -tx.amount), 0) >= 0 
                 ? "text-emerald-600" 
                 : "text-red-500"
             }`}>
               {(CURRENCY_SYMBOLS[summary?.currencyCode || "INR"] || "$")}{" "}
-              {exportTxs.reduce((sum, tx) => sum + (tx.type === "income" ? tx.amount : -tx.amount), 0).toLocaleString()}
+              {exportTxs.reduce((sum, tx) => sum + (tx.type === "income" ? tx.amount : -tx.amount), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </p>
+          </div>
+          <div className="border rounded-xl p-4 bg-emerald-50 border-emerald-200">
+            <p className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider">Saving Score</p>
+            <p className="text-lg font-extrabold text-emerald-700 mt-1">
+              {savingsScore} <span className="text-xs text-emerald-500">/ 100</span>
             </p>
           </div>
         </div>
 
+        {/* ACTIVE BUDGETS PERFORMANCES */}
+        {summary?.budgets && summary.budgets.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Active Category Budgets Performance</h3>
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b bg-slate-100">
+                  <th className="py-2 px-3 font-bold text-slate-600">Category</th>
+                  <th className="py-2 px-3 font-bold text-slate-600">Monthly Budget</th>
+                  <th className="py-2 px-3 font-bold text-slate-600">Actual Spend</th>
+                  <th className="py-2 px-3 font-bold text-slate-600 text-right">Status Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.budgets.map((b: any, idx: number) => {
+                  const spent = exportTxs.filter(tx => tx.category === b.category && tx.type === "expense").reduce((sum, tx) => sum + tx.amount, 0);
+                  const isOver = spent > b.amount;
+                  return (
+                    <tr key={idx} className="border-b">
+                      <td className="py-2.5 px-3 font-semibold text-slate-800">{b.category}</td>
+                      <td className="py-2.5 px-3 text-slate-600 font-mono">{(CURRENCY_SYMBOLS[summary?.currencyCode || "INR"] || "$")}{b.amount.toLocaleString()}</td>
+                      <td className={`py-2.5 px-3 font-semibold font-mono ${isOver ? "text-red-600" : "text-slate-700"}`}>
+                        {(CURRENCY_SYMBOLS[summary?.currencyCode || "INR"] || "$")}{spent.toLocaleString()}
+                      </td>
+                      <td className={`py-2.5 px-3 text-right font-bold ${isOver ? "text-red-500" : "text-emerald-600"}`}>
+                        {isOver ? `Over by ${(CURRENCY_SYMBOLS[summary?.currencyCode || "INR"] || "$")}${(spent - b.amount).toLocaleString()}` : "Safe Margin"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* TARGET SAVINGS GOALS */}
+        {summary?.goals && summary.goals.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Target Savings Goals Status</h3>
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b bg-slate-100">
+                  <th className="py-2 px-3 font-bold text-slate-600">Goal Title</th>
+                  <th className="py-2 px-3 font-bold text-slate-600">Target Goal</th>
+                  <th className="py-2 px-3 font-bold text-slate-600">Amount Saved</th>
+                  <th className="py-2 px-3 font-bold text-slate-600 text-right font-semibold">Progress Achieved</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.goals.map((g: any, idx: number) => {
+                  const pct = Math.min((g.savedAmount / g.targetAmount) * 100, 100);
+                  return (
+                    <tr key={idx} className="border-b">
+                      <td className="py-2.5 px-3 font-semibold text-slate-800">{g.title}</td>
+                      <td className="py-2.5 px-3 text-slate-600 font-mono">{(CURRENCY_SYMBOLS[summary?.currencyCode || "INR"] || "$")}{g.targetAmount.toLocaleString()}</td>
+                      <td className="py-2.5 px-3 text-slate-600 font-mono">{(CURRENCY_SYMBOLS[summary?.currencyCode || "INR"] || "$")}{g.savedAmount.toLocaleString()}</td>
+                      <td className="py-2.5 px-3 text-right font-extrabold text-emerald-600 font-mono">{pct.toFixed(0)}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* TRANSACTION LIST */}
+        <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Itemized Transaction Ledger</h3>
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b bg-slate-100">
-              <th className="py-2 px-3 text-xs font-bold uppercase text-slate-600">Date</th>
-              <th className="py-2 px-3 text-xs font-bold uppercase text-slate-600">Merchant/Title</th>
-              <th className="py-2 px-3 text-xs font-bold uppercase text-slate-600">Category</th>
-              <th className="py-2 px-3 text-xs font-bold uppercase text-slate-600 text-right">Amount</th>
+              <th className="py-2 px-3 text-[10px] font-bold uppercase text-slate-600">Date</th>
+              <th className="py-2 px-3 text-[10px] font-bold uppercase text-slate-600">Merchant/Title</th>
+              <th className="py-2 px-3 text-[10px] font-bold uppercase text-slate-600">Category</th>
+              <th className="py-2 px-3 text-[10px] font-bold uppercase text-slate-600 text-right">Amount</th>
             </tr>
           </thead>
           <tbody>

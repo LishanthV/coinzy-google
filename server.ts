@@ -5,6 +5,7 @@ import session from "express-session";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createServer as createViteServer } from "vite";
+import { GoogleGenAI } from "@google/genai";
 
 const PORT = 3000;
 const DATA_FILE = path.join(process.cwd(), "data_store.json");
@@ -1088,6 +1089,100 @@ async function startServer() {
       message: "Receipt scanned and parsed successfully via AI parser stub!",
       items
     });
+  });
+
+  // GEMINI AI ADVISOR & FINANCIAL INSIGHTS
+  app.post("/api/gemini/advisor", async (req, res) => {
+    const userId = req.session?.userId;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { message, history } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: "Message prompt is required." });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is not configured. Please add your Gemini API Key in the Settings > Secrets panel of your AI Studio environment.",
+        keyMissing: true
+      });
+    }
+
+    try {
+      const db = loadDB();
+      const user = Object.values(db.users).find((u) => u.id === userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      const userExpenses = db.expenses.filter((e) => e.userId === userId);
+      const userIncome = db.income.filter((i) => i.userId === userId);
+      const userBudgets = db.budgets.filter((b) => b.userId === userId);
+      const userGoals = db.goals.filter((g) => g.userId === userId);
+      const userRecurring = db.recurring.filter((r) => r.userId === userId);
+
+      // Build clean summary context
+      const currency = user.currencyCode;
+      const walletBalance = user.walletBalance;
+
+      const financeContext = {
+        currentWalletBalance: walletBalance,
+        currencyCode: currency,
+        totalRegisteredExpensesCount: userExpenses.length,
+        totalRegisteredIncomeCount: userIncome.length,
+        expenses: userExpenses.map(e => ({ title: e.title, amount: e.amount, category: e.category, date: e.date, note: e.note || "" })),
+        income: userIncome.map(i => ({ title: i.title, amount: i.amount, category: i.category, date: i.date, note: i.note || "" })),
+        budgets: userBudgets.map(b => ({ category: b.category, amount: b.amount, month: b.month, year: b.year })),
+        goals: userGoals.map(g => ({ title: g.title, targetAmount: g.targetAmount, savedAmount: g.savedAmount })),
+        recurringBills: userRecurring.map(r => ({ title: r.title, amount: r.amount, category: r.category, dayOfMonth: r.dayOfMonth, isActive: r.isActive }))
+      };
+
+      const ai = new GoogleGenAI({
+        apiKey: apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      // Create content generation prompt
+      const promptWithContext = `
+      USER FINANCIAL CONTEXT DATA:
+      ${JSON.stringify(financeContext, null, 2)}
+
+      USER CONVERSATION HISTORY:
+      ${JSON.stringify(history || [])}
+
+      USER CURRENT MESSAGE:
+      "${message}"
+
+      Provide a helpful, precise, styled response. Use bullet points or markdown bolding where helpful to call out metrics or recommended plans.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: promptWithContext,
+        config: {
+          systemInstruction: `
+          You are Coinzy's "AI Smart Advisor", a friendly and highly analytical personal financial assistant.
+          You have safe, full, read-only access to the user's live financial data to provide accurate, real, customized insights.
+
+          ### RULES:
+          1. Be factual and exact about the user's transactions, active budgets, goals, and recurring bills.
+          2. Keep your answers concise, engaging, and professional.
+          3. Format any currency values clearly using the user's currency symbol.
+          4. Highlight savings strategies, alert them of subscription anomalous price increases (if any), and provide weekly/monthly spending breakdowns on request.
+          5. If they ask natural language questions (e.g. "How much did I spend on food this month?"), calculate it precisely from the provided transactions list.
+          6. Provide constructive, actionable recommendations to improve their saving scores and stay within their budgets.
+          `
+        }
+      });
+
+      res.json({ text: response.text });
+    } catch (err: any) {
+      console.error("Gemini Advisor API Error:", err);
+      res.status(500).json({ error: "Failed to communicate with Gemini AI: " + (err.message || err) });
+    }
   });
 
   // FX Conversion Rates Endpoint

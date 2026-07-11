@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -7,10 +7,30 @@ import {
   Sparkles, 
   PlusCircle, 
   CheckCircle,
-  HelpCircle
+  HelpCircle,
+  PieChart as PieIcon,
+  BarChart2 as BarIcon,
+  Activity as LineIcon,
+  AlertCircle
 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Cell, 
+  PieChart, 
+  Pie, 
+  LineChart, 
+  Line, 
+  AreaChart, 
+  Area 
+} from "recharts";
 import { CAT_ICONS, CURRENCY_SYMBOLS } from "../types.ts";
+import AIAdvisor from "./AIAdvisor.tsx";
 
 interface DashboardProps {
   summary: any;
@@ -26,6 +46,28 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
   const [simSuccess, setSimSuccess] = useState("");
   const [goalSaveAmt, setGoalSaveAmt] = useState<Record<string, string>>({});
   const [goalLoading, setGoalLoading] = useState<string | null>(null);
+  const [chartTab, setChartTab] = useState<"category" | "cashflow" | "trend">("category");
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loadingTx, setLoadingTx] = useState(false);
+
+  // Synchronize all transactions to build true dynamic cumulative balance over time
+  useState(() => {
+    const loadTransactions = async () => {
+      setLoadingTx(true);
+      try {
+        const res = await fetch("/api/transactions");
+        const data = await res.json();
+        if (res.ok && data.transactions) {
+          setTransactions(data.transactions);
+        }
+      } catch (err) {
+        console.error("Failed to load historical tx:", err);
+      } finally {
+        setLoadingTx(false);
+      }
+    };
+    loadTransactions();
+  });
 
   const {
     walletBalance = 0,
@@ -39,6 +81,52 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
   } = summary || {};
 
   const currencySymbol = CURRENCY_SYMBOLS[currencyCode] || "$";
+
+  const cashFlowData = useMemo(() => {
+    return [
+      { name: "Monthly Income", amount: totalIncome, fill: "#27ae60" },
+      { name: "Monthly Expenses", amount: totalExpenses, fill: "#ef4444" }
+    ];
+  }, [totalIncome, totalExpenses]);
+
+  const cumulativeData = useMemo(() => {
+    if (!transactions || transactions.length === 0) return [];
+
+    // Sort chronologically (oldest to newest)
+    const sorted = [...transactions].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    let totalNetOfTx = 0;
+    sorted.forEach((tx) => {
+      if (tx.type === "income") totalNetOfTx += tx.amount;
+      else totalNetOfTx -= tx.amount;
+    });
+
+    let runningBalance = walletBalance - totalNetOfTx;
+
+    const points = sorted.map((tx) => {
+      if (tx.type === "income") runningBalance += tx.amount;
+      else runningBalance -= tx.amount;
+      return {
+        date: tx.date,
+        balance: parseFloat(runningBalance.toFixed(2))
+      };
+    });
+
+    // Group and aggregate multiple transactions on the same day
+    const aggregatedByDate: Record<string, number> = {};
+    points.forEach((p) => {
+      aggregatedByDate[p.date] = p.balance;
+    });
+
+    return Object.entries(aggregatedByDate)
+      .map(([date, balance]) => ({
+        date,
+        balance
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [transactions, walletBalance]);
 
   const getGreeting = () => {
     const hr = new Date().getHours();
@@ -230,30 +318,111 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
       {/* Analytics & Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Spending Analytics Chart */}
-        <div className="bg-white dark:bg-[#1e293b] border border-[#e2e8f0] dark:border-[#334155] rounded-3xl p-6 shadow-sm lg:col-span-3">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-extrabold font-display text-[#0a3d62] dark:text-white">
-              Category Spending Analytics
-            </h3>
-            <span className="text-xs font-bold text-[#64748b] dark:text-gray-400">Current Month</span>
+        <div className="bg-white dark:bg-[#1e293b] border border-[#e2e8f0] dark:border-[#334155] rounded-3xl p-6 shadow-sm lg:col-span-3 flex flex-col justify-between">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
+            <div>
+              <h3 className="text-lg font-extrabold font-display text-[#0a3d62] dark:text-white">
+                Financial Analytics Suite
+              </h3>
+              <p className="text-xs text-[#64748b] dark:text-slate-400">
+                Visualize category shares, net cash flows, and trends.
+              </p>
+            </div>
+            
+            {/* Chart Mode Tab Switches */}
+            <div className="flex bg-[#f1f5f9] dark:bg-slate-800 p-1 rounded-xl gap-1 self-start sm:self-auto">
+              <button
+                onClick={() => setChartTab("category")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${chartTab === "category" ? "bg-white dark:bg-[#1e293b] text-[#27ae60] shadow-sm" : "text-gray-500 dark:text-slate-400 hover:text-gray-900"}`}
+              >
+                <PieIcon className="w-3.5 h-3.5" />
+                Category Share
+              </button>
+              <button
+                onClick={() => setChartTab("cashflow")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${chartTab === "cashflow" ? "bg-white dark:bg-[#1e293b] text-[#27ae60] shadow-sm" : "text-gray-500 dark:text-slate-400 hover:text-gray-900"}`}
+              >
+                <BarIcon className="w-3.5 h-3.5" />
+                Cash Flow
+              </button>
+              <button
+                onClick={() => setChartTab("trend")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${chartTab === "trend" ? "bg-white dark:bg-[#1e293b] text-[#27ae60] shadow-sm" : "text-gray-500 dark:text-slate-400 hover:text-gray-900"}`}
+              >
+                <LineIcon className="w-3.5 h-3.5" />
+                Net Worth Curve
+              </button>
+            </div>
           </div>
           
-          <div className="h-64 sm:h-72 w-full">
-            {chartData.length > 0 ? (
+          <div className="h-64 sm:h-72 w-full flex items-center justify-center">
+            {chartTab === "category" ? (
+              chartData.length > 0 ? (
+                <div className="flex flex-col sm:flex-row items-center gap-6 h-full w-full">
+                  <div className="h-44 w-44 sm:h-52 sm:w-52 shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={chartData}
+                          dataKey="amount"
+                          nameKey="category"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={75}
+                          paddingAngle={3}
+                        >
+                          {chartData.map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={CAT_COLORS[index % CAT_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#0a3d62",
+                            borderColor: "transparent",
+                            borderRadius: "12px",
+                            color: "#fff",
+                            fontWeight: 600,
+                            fontSize: "12px"
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {/* Category Indicators List */}
+                  <div className="flex-1 grid grid-cols-2 gap-3 w-full overflow-y-auto max-h-[220px] pr-1">
+                    {chartData.slice(0, 8).map((entry: any, index: number) => {
+                      const totalSpent = chartData.reduce((sum: number, c: any) => sum + c.amount, 0);
+                      const pct = totalSpent > 0 ? ((entry.amount / totalSpent) * 100).toFixed(0) : 0;
+                      return (
+                        <div key={entry.category} className="flex items-center gap-2 p-1.5 rounded-lg bg-gray-50 dark:bg-slate-800/40 border border-gray-100/50 dark:border-slate-700/30">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CAT_COLORS[index % CAT_COLORS.length] }} />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                              {CAT_ICONS[entry.category] || "💳"} {entry.category}
+                            </p>
+                            <p className="text-[10px] text-[#64748b] dark:text-slate-400 font-extrabold mt-0.5">
+                              {currencySymbol}{entry.amount.toFixed(0)} ({pct}%)
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 w-full">
+                  <div className="text-4xl mb-2">📊</div>
+                  <h4 className="font-bold text-[#0a3d62] dark:text-white">No Spending Analytics</h4>
+                  <p className="text-xs text-[#64748b] dark:text-gray-400 mt-0.5">Start logging your expenses to populate chart metrics.</p>
+                </div>
+              )
+            ) : chartTab === "cashflow" ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                <BarChart data={cashFlowData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis 
-                    dataKey="category" 
-                    tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis 
-                    tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
+                  <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} />
                   <Tooltip
                     cursor={{ fill: "rgba(0,0,0,0.02)" }}
                     contentStyle={{
@@ -265,19 +434,46 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
                       fontSize: "12px"
                     }}
                   />
-                  <Bar dataKey="amount" fill="#27ae60" radius={[6, 6, 0, 0]} maxBarSize={32}>
-                    {chartData.map((_entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={CAT_COLORS[index % CAT_COLORS.length]} />
+                  <Bar dataKey="amount" radius={[8, 8, 0, 0]} maxBarSize={50}>
+                    {cashFlowData.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6">
-                <div className="text-4xl mb-2">📊</div>
-                <h4 className="font-bold text-[#0a3d62] dark:text-white">No Spending Analytics</h4>
-                <p className="text-xs text-[#64748b] dark:text-gray-400 mt-0.5">Start logging your expenses to populate chart metrics.</p>
-              </div>
+              cumulativeData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={cumulativeData} margin={{ top: 10, right: 15, left: -20, bottom: 5 }}>
+                    <defs>
+                      <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#27ae60" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#27ae60" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#0a3d62",
+                        borderColor: "transparent",
+                        borderRadius: "12px",
+                        color: "#fff",
+                        fontWeight: 600,
+                        fontSize: "12px"
+                      }}
+                    />
+                    <Area type="monotone" dataKey="balance" stroke="#27ae60" strokeWidth={3} fillOpacity={1} fill="url(#colorBalance)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 w-full">
+                  <div className="text-4xl mb-2">📈</div>
+                  <h4 className="font-bold text-[#0a3d62] dark:text-white">Trend Data Not Available</h4>
+                  <p className="text-xs text-[#64748b] dark:text-gray-400 mt-0.5">Please add some transactions first to trace saving history.</p>
+                </div>
+              )
             )}
           </div>
         </div>
@@ -327,6 +523,11 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
             )}
           </div>
         </div>
+      </div>
+
+      {/* GEMINI AI SMART ADVISOR WORKSPACE */}
+      <div className="my-6">
+        <AIAdvisor summary={summary} onRefresh={onRefresh} />
       </div>
 
       {/* Budgets & Savings Goals Section */}

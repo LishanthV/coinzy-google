@@ -9,6 +9,7 @@ import {
   AlertCircle 
 } from "lucide-react";
 import { CATEGORIES, CAT_ICONS, CURRENCY_SYMBOLS } from "../types.ts";
+import BudgetProgress from "./BudgetProgress.tsx";
 
 const GOAL_ICONS = ["🎯", "🏖️", "🚗", "🏠", "💻", "✈️", "🎓", "💍", "📱", "💰"];
 
@@ -335,6 +336,9 @@ export default function Wallet({ summary, onRefresh }: WalletProps) {
           </form>
         </div>
       </div>
+
+      {/* Live Budget Tracking Progress Component */}
+      <BudgetProgress summary={summary} onRefresh={onRefresh} />
     </div>
   );
 }
