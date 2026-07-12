@@ -395,7 +395,7 @@ export default function Settings({ summary, onRefresh }: SettingsProps) {
           <div className="space-y-1">
             <h4 className="font-extrabold text-sm">Automated Finance Tracker v2.0</h4>
             <p className="text-xs text-white/80 leading-relaxed">
-              Trackify is designed for modern, friction-free tracking of finances. By linking email notifications with high-contrast local analytics charts and goal projections, it gives you complete financial freedom.
+              Coinzy is designed for modern, friction-free tracking of finances. By linking email notifications with high-contrast local analytics charts and goal projections, it gives you complete financial freedom.
             </p>
           </div>
         </div>
@@ -406,7 +406,7 @@ export default function Settings({ summary, onRefresh }: SettingsProps) {
         <div className="flex justify-between items-start border-b pb-6 mb-6">
           <div>
             <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">COINZY STATEMENT</h1>
-            <p className="text-sm text-slate-500 mt-1">Automated Financial Report • Trackify</p>
+            <p className="text-sm text-slate-500 mt-1">Automated Financial Report • Coinzy</p>
           </div>
           <div className="text-right text-xs text-slate-500">
             <p><strong>Statement Date:</strong> {new Date().toLocaleDateString()}</p>
@@ -552,7 +552,7 @@ export default function Settings({ summary, onRefresh }: SettingsProps) {
 
         {/* FOOTER */}
         <div className="mt-12 pt-6 border-t text-center text-[10px] text-slate-400 uppercase tracking-widest">
-          <p>This is a digital ledger statement generated via Trackify.</p>
+          <p>This is a digital ledger statement generated via Coinzy.</p>
           <p className="mt-1">coinzy_statement_report • Confidentiality Secured</p>
         </div>
       </div>

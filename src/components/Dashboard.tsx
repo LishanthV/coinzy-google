@@ -11,7 +11,8 @@ import {
   PieChart as PieIcon,
   BarChart2 as BarIcon,
   Activity as LineIcon,
-  AlertCircle
+  AlertCircle,
+  Download
 } from "lucide-react";
 import { 
   BarChart, 
@@ -31,6 +32,10 @@ import {
 } from "recharts";
 import { CAT_ICONS, CURRENCY_SYMBOLS } from "../types.ts";
 import AIAdvisor from "./AIAdvisor.tsx";
+import OverallBudgetProgress from "./OverallBudgetProgress.tsx";
+import MonthlySpendTrend from "./MonthlySpendTrend.tsx";
+import QuickAddExpenseFAB from "./QuickAddExpenseFAB.tsx";
+import EndOfMonthProjection from "./EndOfMonthProjection.tsx";
 
 interface DashboardProps {
   summary: any;
@@ -193,6 +198,79 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
     }
   };
 
+  const handleDownloadCSV = () => {
+    const rows: string[][] = [];
+
+    // Section 1: Financial Summary Metadata
+    rows.push(["COINZY FINANCIAL ANALYSIS REPORT"]);
+    rows.push(["Generated on", new Date().toLocaleString()]);
+    rows.push([]);
+    rows.push(["METRIC", "VALUE", "CURRENCY"]);
+    rows.push(["Available Wallet Balance", walletBalance.toString(), currencyCode]);
+    rows.push(["Total Monthly Income", totalIncome.toString(), currencyCode]);
+    rows.push(["Total Monthly Expenses", totalExpenses.toString(), currencyCode]);
+    rows.push(["Net Savings / Burn Rate", (totalIncome - totalExpenses).toString(), currencyCode]);
+    rows.push([]);
+
+    // Section 2: Budget Status
+    if (budgets && budgets.length > 0) {
+      rows.push(["MONTHLY BUDGETS STATUS"]);
+      rows.push(["Category", "Budget Amount", "Spent Amount", "Status"]);
+      budgets.forEach((b: any) => {
+        const spent = b.spent || 0;
+        const remaining = b.amount - spent;
+        const status = remaining >= 0 ? "Under Budget" : "Over Budget";
+        rows.push([b.category, b.amount.toString(), spent.toString(), status]);
+      });
+      rows.push([]);
+    }
+
+    // Section 3: Goals Progress
+    if (goals && goals.length > 0) {
+      rows.push(["SAVINGS GOALS PROGRESS"]);
+      rows.push(["Goal Name", "Target Amount", "Saved Amount", "Progress (%)"]);
+      goals.forEach((g: any) => {
+        const progress = g.target > 0 ? ((g.saved / g.target) * 100).toFixed(1) : "0";
+        rows.push([g.name, g.target.toString(), g.saved.toString(), `${progress}%`]);
+      });
+      rows.push([]);
+    }
+
+    // Section 4: Transactions Listing
+    const txToExport = transactions.length > 0 ? transactions : recentTransactions;
+    if (txToExport && txToExport.length > 0) {
+      rows.push(["TRANSACTION LEDGER HISTORY"]);
+      rows.push(["Date", "Description/Merchant", "Type", "Category", "Amount", "Note", "Tags"]);
+      txToExport.forEach((tx: any) => {
+        rows.push([
+          tx.date || "",
+          tx.title || "",
+          tx.type || "",
+          tx.category || "",
+          tx.amount?.toString() || "0",
+          tx.note || "",
+          tx.tags ? tx.tags.join("; ") : ""
+        ]);
+      });
+    }
+
+    // Convert rows to CSV string
+    const csvString = rows.map(e => e.map(val => {
+      const escaped = (val || "").toString().replace(/"/g, '""');
+      return `"${escaped}"`;
+    }).join(",")).join("\n");
+
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `Coinzy_Financial_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Personalized Welcome Banner */}
@@ -229,6 +307,15 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
           </h2>
         </div>
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          <button
+            id="download-report-btn"
+            onClick={handleDownloadCSV}
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 bg-[#7F77DD] text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-[#6c63ca] transition cursor-pointer"
+            title="Download CSV report of current financial summary, budgets, goals, and transactions"
+          >
+            <Download className="w-4.5 h-4.5" />
+            Download Report
+          </button>
           <button
             onClick={handleSimulateGPay}
             disabled={simLoading}
@@ -314,6 +401,9 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
           </div>
         </div>
       </div>
+
+      {/* OVERALL MONTHLY BUDGET COMPARISON PROGRESS */}
+      <OverallBudgetProgress summary={summary} onNavigate={onNavigate} />
 
       {/* Analytics & Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -525,6 +615,22 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
         </div>
       </div>
 
+      {/* 6-MONTH SPENDING TREND LINE CHART */}
+      <MonthlySpendTrend 
+        transactions={transactions} 
+        budgets={budgets} 
+        currencyCode={currencyCode} 
+      />
+
+      {/* END OF MONTH PREDICTIVE SPENDING PROJECTION & SIMULATOR */}
+      <div className="my-6">
+        <EndOfMonthProjection 
+          transactions={transactions} 
+          budgets={budgets} 
+          currencyCode={currencyCode} 
+        />
+      </div>
+
       {/* GEMINI AI SMART ADVISOR WORKSPACE */}
       <div className="my-6">
         <AIAdvisor summary={summary} onRefresh={onRefresh} />
@@ -667,6 +773,9 @@ export default function Dashboard({ summary, user, onNavigate, onRefresh }: Dash
           </div>
         </div>
       </div>
+
+      {/* FLOATING ACTION QUICK ADD TRANSACTIONS COMPONENT */}
+      <QuickAddExpenseFAB currencyCode={currencyCode} onRefresh={onRefresh} />
     </div>
   );
 }

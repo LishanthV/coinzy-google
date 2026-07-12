@@ -271,7 +271,7 @@ export default function Recurring({ summary, onRefresh }: RecurringProps) {
                 <ShieldAlert className="w-12 h-12 text-gray-300 mb-3" />
                 <h4 className="font-bold text-[#0a3d62] dark:text-white">No active schedules</h4>
                 <p className="text-xs text-[#64748b] dark:text-gray-400 mt-1 max-w-sm">
-                  Add subscriptions like Netflix, PG rent, or wifi charges. Trackify will debit them automatically when due.
+                  Add subscriptions like Netflix, PG rent, or wifi charges. Coinzy will debit them automatically when due.
                 </p>
               </div>
             )}

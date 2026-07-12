@@ -65,7 +65,7 @@ export default function Wallet({ summary, onRefresh }: WalletProps) {
       if (!res.ok) {
         setWalletError(data.error || "Failed to add funds");
       } else {
-        setWalletSuccess(`Successfully loaded ${currencySymbol}${amt} into Trackify Wallet!`);
+        setWalletSuccess(`Successfully loaded ${currencySymbol}${amt} into Coinzy Wallet!`);
         setWalletAmt("");
         onRefresh();
       }
@@ -164,7 +164,7 @@ export default function Wallet({ summary, onRefresh }: WalletProps) {
             <div className="flex justify-between items-start mb-6">
               <h3 className="text-lg font-extrabold font-display text-[#0a3d62] dark:text-white flex items-center gap-2">
                 <WalletIcon className="w-5 h-5 text-[#27ae60]" />
-                Trackify Digital Wallet
+                Coinzy Digital Wallet
               </h3>
             </div>
 

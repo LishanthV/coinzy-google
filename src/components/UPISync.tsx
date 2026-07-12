@@ -233,7 +233,7 @@ export default function UPISync({ summary, onRefresh }: UPISyncProps) {
             How UPI Inbox Sync Works
           </h3>
           <p className="text-xs text-gray-600 dark:text-gray-300 max-w-xl">
-            Trackify scans your incoming transaction alert emails (from GPay, PhonePe, SBI, Paytm). When it detects a transaction, it queues it here. You can change categories, rename merchants, and import them with 1-click.
+            Coinzy scans your incoming transaction alert emails (from GPay, PhonePe, SBI, Paytm). When it detects a transaction, it queues it here. You can change categories, rename merchants, and import them with 1-click.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">

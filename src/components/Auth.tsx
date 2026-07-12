@@ -191,7 +191,7 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
         {/* Brand Logo and Title */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#e9f7ef] text-[#27ae60] mb-4 dark:bg-[#1e3a8a] dark:text-[#60a5fa]">
-            <span className="text-3xl font-bold font-display">T</span>
+            <span className="text-3xl font-bold font-display">C</span>
           </div>
           <h2 className="text-3xl font-bold font-display tracking-tight text-[#0a3d62] dark:text-[#60a5fa]">
             {isVerifying ? "Verify Account" : isLogin ? "Welcome Back" : "Create Account"}
@@ -200,7 +200,7 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
             {isVerifying 
               ? `Verification code sent to ${verifyEmail}` 
               : isLogin 
-                ? "Sign in to access your Trackify dashboard" 
+                ? "Sign in to access your Coinzy dashboard" 
                 : "The smartest way to automate & manage your finance"}
           </p>
         </div>

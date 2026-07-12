@@ -11,7 +11,8 @@ import {
   LogOut, 
   Menu, 
   X,
-  User as UserIcon
+  User as UserIcon,
+  WifiOff
 } from "lucide-react";
 
 import Auth from "./components/Auth.tsx";
@@ -31,6 +32,21 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
+
+  // Synchronize browser online/offline status
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // Authenticate on mount
   useEffect(() => {
@@ -45,7 +61,23 @@ export default function App() {
         }
       } catch (err) {
         console.error("Check auth failed:", err);
-        setUser(null);
+        // Offline fallback for authentication state
+        const savedUser = localStorage.getItem("trackifyUser");
+        if (savedUser) {
+          try {
+            const parsed = JSON.parse(savedUser);
+            if (parsed && parsed.id) {
+              console.log("[App] Offline Mode: Restored active session from cache");
+              setUser(parsed);
+            } else {
+              setUser(null);
+            }
+          } catch (e) {
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
       } finally {
         setLoading(false);
       }
@@ -86,11 +118,23 @@ export default function App() {
       const data = await res.json();
       if (res.ok) {
         setSummary(data);
+        // Persist summary locally to support offline visualization
+        localStorage.setItem("coinzy_summary", JSON.stringify(data));
       }
     } catch (err) {
       console.error("Fetch summary failed:", err);
+      // Retrieve offline summary backup
+      const cachedSummary = localStorage.getItem("coinzy_summary");
+      if (cachedSummary) {
+        try {
+          const parsed = JSON.parse(cachedSummary);
+          setSummary(parsed);
+          console.log("[App] Offline Mode: Displaying offline cached dashboard snapshot");
+        } catch (e) {}
+      }
     }
   };
+
 
   useEffect(() => {
     if (user) {
@@ -156,10 +200,10 @@ export default function App() {
           {/* Logo Brand */}
           <div className="flex items-center gap-2.5">
             <span className="w-9 h-9 rounded-xl bg-[#27ae60] text-white flex items-center justify-center font-extrabold text-lg shadow-sm">
-              T
+              C
             </span>
             <span className="font-extrabold text-xl font-display tracking-tight text-[#0a3d62] dark:text-white">
-              Trackify<span className="text-[#27ae60]">.</span>
+              Coinzy<span className="text-[#27ae60]">.</span>
             </span>
           </div>
 
@@ -264,6 +308,14 @@ export default function App() {
         )}
       </header>
 
+      {/* OFFLINE STATUS NOTIFICATION BANNER */}
+      {isOffline && (
+        <div id="offline-network-banner" className="bg-amber-500 text-white text-xs font-black text-center py-2 px-4 flex items-center justify-center gap-2 animate-pulse shadow-inner">
+          <WifiOff className="w-4 h-4 text-white animate-bounce" />
+          <span>Offline Mode — Viewing cached local data. Some features require connection.</span>
+        </div>
+      )}
+
       {/* CORE CONTENT SWITCH ROUTER */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8">
         {activeTab === "dashboard" && (
@@ -308,7 +360,7 @@ export default function App() {
 
       {/* FOOTER METRICS RAIL */}
       <footer className="mt-16 py-6 border-t border-[#e2e8f0] dark:border-[#334155] text-center text-xs text-[#64748b] dark:text-gray-500 bg-white dark:bg-[#1e293b]/40 mb-16 md:mb-0">
-        <p className="font-semibold">Trackify Smart Financial Dashboard © 2026</p>
+        <p className="font-semibold">Coinzy Smart Financial Dashboard © 2026</p>
         <p className="text-[10px] mt-1 text-gray-400 dark:text-gray-600">
           Powered by Express Core Engine, React View Layer & File-based DB Persistence
         </p>
